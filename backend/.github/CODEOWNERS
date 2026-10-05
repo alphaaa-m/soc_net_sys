@@ -1,0 +1,18 @@
+# Module ownership — GitHub requests the right reviewers automatically.
+# Team A reviews Team B and vice-versa; mentor approves everything.
+/app/routers/auth.py        @team-a @mentor
+/app/routers/follows.py     @team-a @mentor
+/app/routers/likes.py       @team-a @mentor
+/app/routers/reposts.py     @team-a @mentor
+/app/routers/bookmarks.py   @team-a @mentor
+/app/routers/notifications.py @team-a @mentor
+/app/routers/search.py      @team-a @mentor
+/app/routers/reports.py     @team-a @mentor
+/app/routers/admin.py       @team-a @mentor
+/app/routers/users.py       @team-b @mentor
+/app/routers/posts.py       @team-b @mentor
+/app/routers/comments.py    @team-b @mentor
+/app/routers/feed.py        @team-b @mentor
+/app/routers/hashtags.py    @team-b @mentor
+/app/routers/blocks.py      @team-b @mentor
+/app/main.py app/config.py app/database.py app/models.py app/deps.py app/security.py migrations/ @mentor
