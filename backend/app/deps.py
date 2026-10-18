@@ -18,13 +18,18 @@ from app import models
 from app.database import get_db
 from app.security import decode_access_token
 
-_bearer = HTTPBearer(auto_error=True)
+_bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),  # noqa: B008
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
 ) -> models.User:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        )
     try:
         user_id = decode_access_token(credentials.credentials)
     except jwt.PyJWTError as err:
