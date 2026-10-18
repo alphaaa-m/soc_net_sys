@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -28,7 +29,9 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError):
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        # jsonable_encoder drops non-serializable ctx (e.g. ValueError objects
+        # from custom Pydantic validators) so 422s never become 500s.
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
     @app.exception_handler(IntegrityError)
     async def integrity_handler(request: Request, exc: IntegrityError):
