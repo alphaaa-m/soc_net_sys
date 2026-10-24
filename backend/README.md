@@ -1,6 +1,9 @@
-# Chirp Backend — Phase 0
+# Chirp Backend — Phase 0 foundation + Phase 1 Team B profiles
 
 Text-only social network API. Python · FastAPI · SQLAlchemy · Alembic · PostgreSQL · JWT · pytest.
+
+The Phase 0 foundation is in place. Phase 1 Team B's profile endpoints are implemented; Phase 1
+Team A's authentication endpoints remain a separate deliverable.
 
 Source of truth for features, API and schema: the **Chirp PRD** (`../Chirp PRD & Engineering Guide.md`).
 Execution order: the **Project Management Plan** (`../Chirp Project Management Plan.md`).
@@ -83,6 +86,19 @@ backend/
 ├── .env.example
 └── README.md
 ```
+
+## Phase 1 — User profiles (Team B)
+
+| Method | Endpoint | Access | Behaviour |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/users/me` | Authenticated | Returns the current user's private profile, including email |
+| `PATCH` | `/api/v1/users/me` | Authenticated | Updates `display_name` and/or `bio` |
+| `GET` | `/api/v1/users/{username}` | Public | Returns an active user's public profile |
+
+Public responses omit email, password hash, role, and account status. Profile counts are currently
+zero-valued stubs, as specified by the Phase 1 management plan; later phases wire them to follow and
+post data. Deactivated users are hidden from public profile lookup. See [TESTING.md](TESTING.md)
+for the profile test matrix and manual Swagger checks.
 
 ## How auth works (summary)
 
