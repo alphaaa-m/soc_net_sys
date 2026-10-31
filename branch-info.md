@@ -1,4 +1,4 @@
-﻿# labiqa
+# master
 
-This branch is assigned to Student labiqa.
+This branch is assigned to Project master branch.
 
