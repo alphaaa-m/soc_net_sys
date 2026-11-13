@@ -13,6 +13,7 @@ export default function Nav() {
 
   const links = [
     { href: "/", label: "Home" },
+    { href: "/discover", label: "Discover" },
     { href: "/modules", label: "Roadmap" },
   ];
   if (me) links.push({ href: "/profile", label: "My profile" });

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { api } from "@/lib/api";
 
-export default function FollowButton({ profile, onChange }) {
+export default function FollowButton({ profile, onChange, size }) {
   const { me } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -21,7 +21,7 @@ export default function FollowButton({ profile, onChange }) {
       await api(`/users/${profile.id}/follow`, {
         method: following ? "DELETE" : "PUT",
       });
-      onChange?.();
+      onChange?.(!following);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -33,7 +33,9 @@ export default function FollowButton({ profile, onChange }) {
     <div className="stack-sm">
       <button
         type="button"
-        className={`btn ${following ? "btn-secondary" : "btn-primary"}`}
+        className={`btn ${size === "sm" ? "btn-sm " : ""}${
+          following ? "btn-secondary" : "btn-primary"
+        }`}
         onClick={toggle}
         disabled={busy}
       >

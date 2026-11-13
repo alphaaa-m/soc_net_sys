@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import PostCard from "@/components/PostCard";
 import PostComposer from "@/components/PostComposer";
+import UserSearch from "@/components/UserSearch";
 import { api } from "@/lib/api";
 
 export default function HomePage() {
@@ -52,6 +53,9 @@ export default function HomePage() {
             </Link>
             <Link className="btn btn-secondary" href="/login">
               I already have one
+            </Link>
+            <Link className="btn btn-ghost" href="/discover">
+              Browse people
             </Link>
           </div>
         </section>
@@ -110,6 +114,21 @@ export default function HomePage() {
         <PostComposer
           onPosted={(post) => setPosts((list) => [post, ...list])}
         />
+      </section>
+
+      <section className="card card-pad">
+        <div className="row between">
+          <div>
+            <h2>Find people</h2>
+            <p className="muted">
+              Search by name or @username, then follow in one click.
+            </p>
+          </div>
+          <Link href="/discover" className="btn btn-ghost btn-sm">
+            Open discover
+          </Link>
+        </div>
+        <UserSearch />
       </section>
 
       <div className="banner banner-warn">

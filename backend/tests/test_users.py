@@ -141,3 +141,93 @@ def test_profile_counts_reflect_rows_and_ignore_deleted_posts(client, db, user):
     assert body["followers_count"] == 1
     assert body["following_count"] == 1
     assert body["posts_count"] == 1  # the soft-deleted post is excluded
+
+
+# --------------------------------------------------------------------------- #
+# GET /users?q=  (people search)
+# --------------------------------------------------------------------------- #
+def test_user_search_finds_by_username_substring(client, db, user):
+    _make_user(db, "sara")
+    _make_user(db, "sam")
+    _make_user(db, "bob")
+
+    r = client.get("/api/v1/users", params={"q": "sa"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [item["username"] for item in body["items"]] == ["sam", "sara"]
+    assert body["total"] == 2
+    assert body["limit"] == 20
+    assert body["offset"] == 0
+
+
+def test_user_search_matches_display_name_case_insensitively(client, db, user):
+    other = _make_user(db, "zoe")
+    other.display_name = "Zoe Zebra"
+    db.commit()
+
+    r = client.get("/api/v1/users", params={"q": "ZEBRA"})
+    assert r.status_code == 200
+    assert [item["username"] for item in r.json()["items"]] == ["zoe"]
+
+
+def test_user_search_excludes_self_and_deactivated_when_logged_in(
+    client, db, user, auth_headers
+):
+    _make_user(db, "alina")
+    _make_user(db, "alice", is_active=False)
+
+    r = client.get("/api/v1/users", params={"q": "ali"}, headers=auth_headers)
+    assert r.status_code == 200
+    assert [item["username"] for item in r.json()["items"]] == ["alina"]
+
+
+def test_user_search_without_token_includes_self_and_hides_deactivated(client, db, user):
+    _make_user(db, "alina")
+    _make_user(db, "alice", is_active=False)
+
+    r = client.get("/api/v1/users", params={"q": "ali"})
+    body = r.json()
+    assert {item["username"] for item in body["items"]} == {"ali", "alina"}
+    assert all(item["is_following"] is False for item in body["items"])
+
+
+def test_user_search_marks_who_i_follow(client, db, user, auth_headers):
+    other = _make_user(db, "sara")
+    db.add(models.Follow(follower_id=user.id, following_id=other.id))
+    db.commit()
+
+    r = client.get("/api/v1/users", params={"q": "sara"}, headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["items"][0]["is_following"] is True
+
+
+def test_user_search_requires_at_least_two_characters(client):
+    assert client.get("/api/v1/users", params={"q": "a"}).status_code == 422
+    assert client.get("/api/v1/users").status_code == 422
+
+
+def test_user_search_blank_query_returns_empty_page(client):
+    body = client.get("/api/v1/users", params={"q": "  "}).json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_user_search_paginates(client, db, user):
+    for name in ("sara", "sam", "sally"):
+        _make_user(db, name)
+
+    r = client.get(
+        "/api/v1/users", params={"q": "sa", "limit": 2, "offset": 1}
+    )
+    body = r.json()
+    assert body["total"] == 3
+    assert body["limit"] == 2
+    assert body["offset"] == 1
+    assert [item["username"] for item in body["items"]] == ["sam", "sara"]
+
+
+def test_user_search_treats_like_wildcards_as_literal(client, db, user):
+    _make_user(db, "sara")
+
+    assert client.get("/api/v1/users", params={"q": "%%"}).json()["total"] == 0
+    assert client.get("/api/v1/users", params={"q": "__"}).json()["total"] == 0

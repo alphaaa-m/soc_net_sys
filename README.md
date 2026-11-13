@@ -11,10 +11,10 @@ PostgreSQL** on the backend and **Next.js** on the frontend.
 | Phase | Module | Status |
 | --- | --- | --- |
 | 1 | Register / login / logout, change password, deactivate, profiles | ✅ Live |
-| 2 | Follow / unfollow, followers / following, posts CRUD + soft delete | ✅ Live |
+| 2 | Follow / unfollow, followers / following, people search, posts CRUD + soft delete | ✅ Live |
 | 3 | Likes, reposts, comments & replies | ⚠ Not yet implemented |
 | 4 | Feed, bookmarks, notifications | ⚠ Not yet implemented |
-| 5 | Search, hashtags, mentions | ⚠ Not yet implemented |
+| 5 | Post / hashtag / mention search, hashtags, mentions | ⚠ Not yet implemented |
 | 6 | Blocking, reporting, admin | ⚠ Not yet implemented |
 
 Anything that is not built yet is shown in the UI as a **warning screen** with

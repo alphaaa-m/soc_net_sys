@@ -130,6 +130,16 @@ export default function PublicProfilePage() {
         </div>
       </section>
 
+      {me && me.id === profile.id && (
+        <div className="banner banner-info">
+          <strong>This is your profile</strong>
+          <span>
+            You cannot follow yourself.{" "}
+            <Link href="/discover">Find people to follow</Link> in Discover.
+          </span>
+        </div>
+      )}
+
       <div className="tabs">
         {TABS.map((item) => (
           <button
@@ -182,8 +192,17 @@ export default function PublicProfilePage() {
                     {person.bio ? ` · ${person.bio}` : ""}
                   </small>
                 </div>
-                {person.is_following && (
-                  <span className="badge badge-done">Following</span>
+                {me && person.id === me.id ? (
+                  <span className="badge">You</span>
+                ) : (
+                  <FollowButton
+                    profile={person}
+                    size="sm"
+                    onChange={() => {
+                      loadTab(tab);
+                      loadProfile();
+                    }}
+                  />
                 )}
               </div>
             ))

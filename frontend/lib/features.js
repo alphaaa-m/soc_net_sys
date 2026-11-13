@@ -21,12 +21,14 @@ export const PHASES = [
     phase: 2,
     title: "Social graph & posts",
     status: "done",
-    blurb: "Follow relationships plus post creation, editing and soft delete.",
+    blurb:
+      "Follow relationships plus post creation, editing and soft delete, with a people search so the graph is easy to explore.",
     items: [
       { label: "Follow / unfollow", done: true },
       { label: "Followers & following lists", done: true },
       { label: "Create, edit, soft-delete posts", done: true },
       { label: "Personal posts (paginated)", done: true },
+      { label: "People search (find someone to follow)", done: true },
     ],
   },
   {
@@ -119,7 +121,8 @@ export const FEATURES = {
   search: {
     phase: 5,
     title: "Search",
-    blurb: "Find people, posts and hashtags by text.",
+    blurb:
+      "Find posts, hashtags and mentions by text. People search is already live from Phase 2.",
     endpoints: "GET /search/users?q= · GET /search/posts?q=",
   },
   hashtags: {
