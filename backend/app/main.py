@@ -29,8 +29,13 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError):
+<<<<<<< HEAD
         # jsonable_encoder drops non-serializable ctx (e.g. ValueError objects
         # from custom Pydantic validators) so 422s never become 500s.
+=======
+        # jsonable_encoder makes custom-validator errors (which carry a
+        # ValueError in `ctx`) serialisable — same shape as FastAPI's default.
+>>>>>>> master
         return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
     @app.exception_handler(IntegrityError)
