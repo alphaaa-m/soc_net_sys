@@ -6,7 +6,7 @@ they can never drift (PRD B3). Deactivated users are hidden from public views.
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -90,6 +90,83 @@ def get_profile(
 ) -> user_schemas.UserProfile:
     target = get_active_user_by_username(db, username)
     return build_profile(db, target, current)
+
+
+def _escape_like(term: str) -> str:
+    """Escape LIKE wildcards so a search for ``%`` or ``_`` is literal."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def search_users(
+    db: Session,
+    query: str,
+    *,
+    limit: int,
+    offset: int,
+    current: models.User | None,
+) -> user_schemas.UserPage:
+    """Find active users by username or display name (case-insensitive).
+
+    This is the Phase 2 discovery aid that makes the follow graph usable: you
+    can only follow someone once you can find them. Post/hashtag/mention search
+    remains Phase 5 scope. The caller is omitted from their own results so the
+    list only contains people they can actually follow.
+    """
+    term = query.strip()
+    if not term:
+        return user_schemas.UserPage(items=[], limit=limit, offset=offset, total=0)
+
+    escaped = _escape_like(term)
+    contains = f"%{escaped}%"
+    prefix = f"{escaped}%"
+
+    base = db.query(models.User).filter(
+        models.User.is_active.is_(True),
+        or_(
+            models.User.username.ilike(contains, escape="\\"),
+            models.User.display_name.ilike(contains, escape="\\"),
+        ),
+    )
+    if current is not None:
+        base = base.filter(models.User.id != current.id)
+
+    total = base.count()
+    # Username prefix matches first, then everything else alphabetically.
+    relevance = case(
+        (models.User.username.ilike(prefix, escape="\\"), 0),
+        else_=1,
+    )
+    rows = (
+        base.order_by(relevance, models.User.username.asc(), models.User.id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    followed: set[int] = set()
+    if current is not None and rows:
+        ids = [user.id for user in rows]
+        edges = (
+            db.query(models.Follow.following_id)
+            .filter(
+                models.Follow.follower_id == current.id,
+                models.Follow.following_id.in_(ids),
+            )
+            .all()
+        )
+        followed = {row[0] for row in edges}
+
+    items = [
+        user_schemas.UserSummary(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            bio=user.bio,
+            is_following=user.id in followed,
+        )
+        for user in rows
+    ]
+    return user_schemas.UserPage(items=items, limit=limit, offset=offset, total=total)
 
 
 def update_profile(db: Session, user: models.User, changes: dict) -> models.User:

@@ -1,186 +1,171 @@
-"""Team A — Follow system business logic (Phase 2).
+"""Follow-graph business rules (PRD Part D, Phase 2).
 
-All follow rules live here so routers stay thin (PRD Part E):
-
-- cannot follow yourself -> 400
-- target missing or deactivated -> 404 (deactivated accounts are hidden
-  from public views, consistent with PRD B1/B2)
-- duplicate follow -> 409 (also protected by the composite primary key)
-- unfollow when not following -> 404
-- follower/following lists are public and hide deactivated accounts
-- count helpers are ready for the profile wiring PR (user_service.py owner)
+A follow is a row in the ``follows`` junction table. The composite primary key
+``(follower_id, following_id)`` and the ``CHECK (follower_id <> following_id)``
+constraint are the database safety net; this module enforces the same rules in
+code so callers get clean 400/404/409 responses instead of IntegrityErrors.
 """
 
-from fastapi import HTTPException, status
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
-from app.exceptions import conflict, not_found
-
-USER_NOT_FOUND = "User not found."
-SELF_FOLLOW = "You cannot follow yourself."
-ALREADY_FOLLOWING = "You are already following this user."
-NOT_FOLLOWING = "You are not following this user."
-
-
-def _get_active_user(db: Session, user_id: int) -> models.User:
-    """Return an active user or raise the documented 404."""
-    user = db.get(models.User, user_id)
-    if user is None or not user.is_active:
-        raise not_found(USER_NOT_FOUND)
-    return user
-
-
-def _get_active_user_by_username(db: Session, username: str) -> models.User:
-    """Case-insensitive public lookup; deactivated users are hidden."""
-    user = db.scalar(
-        select(models.User).where(
-            func.lower(models.User.username) == username.strip().lower(),
-            models.User.is_active.is_(True),
-        )
-    )
-    if user is None:
-        raise not_found(USER_NOT_FOUND)
-    return user
-
-
-def follow_user(db: Session, follower: models.User, following_id: int) -> models.Follow:
-    """Create the follow relationship, enforcing every Phase 2 rule."""
-    if follower.id == following_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=SELF_FOLLOW,
-        )
-
-    _get_active_user(db, following_id)
-
-    if db.get(models.Follow, (follower.id, following_id)) is not None:
-        raise conflict(ALREADY_FOLLOWING)
-
-    follow = models.Follow(follower_id=follower.id, following_id=following_id)
-    db.add(follow)
-    try:
-        db.commit()
-    except IntegrityError as err:
-        # The composite PK is the real duplicate guard (two requests at once).
-        db.rollback()
-        if db.get(models.User, following_id) is None:
-            raise not_found(USER_NOT_FOUND) from err
-        raise conflict(ALREADY_FOLLOWING) from err
-
-    db.refresh(follow)
-    return follow
-
-
-def unfollow_user(db: Session, follower: models.User, following_id: int) -> None:
-    """Remove the relationship or return 404 when it does not exist."""
-    if db.get(models.User, following_id) is None:
-        raise not_found(USER_NOT_FOUND)
-
-    follow = db.get(models.Follow, (follower.id, following_id))
-    if follow is None:
-        raise not_found(NOT_FOLLOWING)
-
-    db.delete(follow)
-    db.commit()
-
-
-def list_followers(
-    db: Session, username: str, limit: int, offset: int
-) -> tuple[list[models.User], int]:
-    """Return (page of active followers, total active followers)."""
-    target = _get_active_user_by_username(db, username)
-
-    page_query = (
-        select(models.User)
-        .join(models.Follow, models.Follow.follower_id == models.User.id)
-        .where(
-            models.Follow.following_id == target.id,
-            models.User.is_active.is_(True),
-        )
-        .order_by(models.Follow.created_at.desc(), models.User.id.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-    items = list(db.scalars(page_query).all())
-
-    total = db.scalar(
-        select(func.count())
-        .select_from(models.Follow)
-        .join(models.User, models.User.id == models.Follow.follower_id)
-        .where(
-            models.Follow.following_id == target.id,
-            models.User.is_active.is_(True),
-        )
-    )
-    return items, int(total or 0)
-
-
-def list_following(
-    db: Session, username: str, limit: int, offset: int
-) -> tuple[list[models.User], int]:
-    """Return (page of active followed users, total active followed users)."""
-    target = _get_active_user_by_username(db, username)
-
-    page_query = (
-        select(models.User)
-        .join(models.Follow, models.Follow.following_id == models.User.id)
-        .where(
-            models.Follow.follower_id == target.id,
-            models.User.is_active.is_(True),
-        )
-        .order_by(models.Follow.created_at.desc(), models.User.id.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-    items = list(db.scalars(page_query).all())
-
-    total = db.scalar(
-        select(func.count())
-        .select_from(models.Follow)
-        .join(models.User, models.User.id == models.Follow.following_id)
-        .where(
-            models.Follow.follower_id == target.id,
-            models.User.is_active.is_(True),
-        )
-    )
-    return items, int(total or 0)
+from app.exceptions import bad_request, conflict, not_found
+from app.schemas import follow as follow_schemas
+from app.services import user_service
 
 
 def count_followers(db: Session, user_id: int) -> int:
-    """Number of active users following ``user_id``.
-
-    Public counts hide deactivated accounts, matching the list endpoints.
-    Ready to be wired into the profile response by the user_service owner.
-    """
-    total = db.scalar(
-        select(func.count())
-        .select_from(models.Follow)
-        .join(models.User, models.User.id == models.Follow.follower_id)
-        .where(
-            models.Follow.following_id == user_id,
-            models.User.is_active.is_(True),
-        )
-    )
-    return int(total or 0)
+    """Number of users following ``user_id`` (COUNT(*), PRD MVP)."""
+    return db.query(models.Follow).filter(models.Follow.following_id == user_id).count()
 
 
 def count_following(db: Session, user_id: int) -> int:
-    """Number of active users that ``user_id`` follows."""
-    total = db.scalar(
-        select(func.count())
-        .select_from(models.Follow)
-        .join(models.User, models.User.id == models.Follow.following_id)
-        .where(
-            models.Follow.follower_id == user_id,
-            models.User.is_active.is_(True),
-        )
-    )
-    return int(total or 0)
+    """Number of users ``user_id`` follows."""
+    return db.query(models.Follow).filter(models.Follow.follower_id == user_id).count()
 
 
 def is_following(db: Session, follower_id: int, following_id: int) -> bool:
-    """Whether ``follower_id`` follows ``following_id`` (profile wiring helper)."""
-    return db.get(models.Follow, (follower_id, following_id)) is not None
+    """Whether ``follower_id`` currently follows ``following_id``."""
+    return (
+        db.query(models.Follow)
+        .filter(
+            models.Follow.follower_id == follower_id,
+            models.Follow.following_id == following_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def follow_user(db: Session, follower: models.User, target_id: int) -> None:
+    """Create a follow edge. 400 self-follow, 404 missing/deactivated, 409 duplicate."""
+    if follower.id == target_id:
+        raise bad_request("You cannot follow yourself.")
+
+    # Deactivated users are hidden, so "follow" reports them as not found (PRD).
+    target = db.get(models.User, target_id)
+    if target is None or not target.is_active:
+        raise not_found("User not found.")
+
+    if is_following(db, follower.id, target.id):
+        raise conflict("You are already following this user.")
+
+    db.add(models.Follow(follower_id=follower.id, following_id=target.id))
+    try:
+        db.commit()
+    except IntegrityError as err:
+        # Lost a race between the check above and the insert; the PK caught it.
+        db.rollback()
+        raise conflict("You are already following this user.") from err
+
+
+def unfollow_user(db: Session, follower: models.User, target_id: int) -> None:
+    """Remove a follow edge; 404 when the edge does not exist (team decision)."""
+    edge = (
+        db.query(models.Follow)
+        .filter(
+            models.Follow.follower_id == follower.id,
+            models.Follow.following_id == target_id,
+        )
+        .first()
+    )
+    if edge is None:
+        raise not_found("You are not following this user.")
+    db.delete(edge)
+    db.commit()
+
+
+def _build_page(
+    db: Session,
+    users: list[models.User],
+    *,
+    limit: int,
+    offset: int,
+    total: int,
+    current: models.User | None,
+) -> follow_schemas.UserPage:
+    followed: set[int] = set()
+    if current is not None and users:
+        ids = [user.id for user in users]
+        edges = (
+            db.query(models.Follow.following_id)
+            .filter(
+                models.Follow.follower_id == current.id,
+                models.Follow.following_id.in_(ids),
+            )
+            .all()
+        )
+        followed = {row[0] for row in edges}
+
+    items = [
+        follow_schemas.UserSummary(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            bio=user.bio,
+            is_following=user.id in followed,
+        )
+        for user in users
+    ]
+    return follow_schemas.UserPage(items=items, limit=limit, offset=offset, total=total)
+
+
+def list_followers(
+    db: Session,
+    username: str,
+    *,
+    limit: int,
+    offset: int,
+    current: models.User | None,
+) -> follow_schemas.UserPage:
+    """Users who follow ``username``, most recent follows first."""
+    user = user_service.get_active_user_by_username(db, username)
+    base = (
+        db.query(models.User)
+        .join(models.Follow, models.Follow.follower_id == models.User.id)
+        .filter(
+            models.Follow.following_id == user.id,
+            models.User.is_active.is_(True),
+        )
+    )
+    total = base.count()
+    rows = (
+        base.order_by(models.Follow.created_at.desc(), models.User.id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return _build_page(
+        db, rows, limit=limit, offset=offset, total=total, current=current
+    )
+
+
+def list_following(
+    db: Session,
+    username: str,
+    *,
+    limit: int,
+    offset: int,
+    current: models.User | None,
+) -> follow_schemas.UserPage:
+    """Users ``username`` follows, most recent follows first."""
+    user = user_service.get_active_user_by_username(db, username)
+    base = (
+        db.query(models.User)
+        .join(models.Follow, models.Follow.following_id == models.User.id)
+        .filter(
+            models.Follow.follower_id == user.id,
+            models.User.is_active.is_(True),
+        )
+    )
+    total = base.count()
+    rows = (
+        base.order_by(models.Follow.created_at.desc(), models.User.id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return _build_page(
+        db, rows, limit=limit, offset=offset, total=total, current=current
+    )

@@ -1,18 +1,13 @@
-"""Team A — Follow system router (Phase 2).
-
-Thin HTTP layer over services/follow_service.py (PRD Parts B3 + D).
-The routes live under ``/users`` because they act on a user; the file
-itself is Team A's module router (PM Plan ownership map).
-"""
+"""Follow HTTP layer (PRD Part D, Phase 2). Rules live in follow_service."""
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, get_current_user_optional
 from app.pagination import pagination
-from app.schemas.follow import FollowList, FollowRead
+from app.schemas import follow as follow_schemas
 from app.services import follow_service
 
 router = APIRouter(prefix="/users", tags=["follows"])
@@ -20,89 +15,67 @@ router = APIRouter(prefix="/users", tags=["follows"])
 
 @router.put(
     "/{user_id}/follow",
-    response_model=FollowRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Follow a user",
-    description=(
-        "Creates the follow relationship. Self-follow is 400, missing or "
-        "deactivated targets are 404, and an existing follow is 409."
-    ),
-    responses={
-        400: {"description": "Cannot follow yourself"},
-        401: {"description": "Missing/invalid token"},
-        404: {"description": "Target user not found or deactivated"},
-        409: {"description": "Already following this user"},
-    },
+    summary="Follow a user (409 if already following)",
 )
-def follow_user(
+def follow(
     user_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-) -> models.Follow:
-    return follow_service.follow_user(db, current_user, user_id)
+    db: Session = Depends(get_db),  # noqa: B008
+    current: models.User = Depends(get_current_user),  # noqa: B008
+) -> dict:
+    follow_service.follow_user(db, current, user_id)
+    return {"detail": "Now following this user."}
 
 
 @router.delete(
     "/{user_id}/follow",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Unfollow a user",
-    description=(
-        "Removes the follow relationship. Returns 404 when the relationship "
-        "(or the target user) does not exist."
-    ),
-    responses={
-        401: {"description": "Missing/invalid token"},
-        404: {"description": "User not found or not currently followed"},
-    },
+    summary="Unfollow a user (404 if not following)",
 )
-def unfollow_user(
+def unfollow(
     user_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),  # noqa: B008
+    current: models.User = Depends(get_current_user),  # noqa: B008
 ) -> None:
-    follow_service.unfollow_user(db, current_user, user_id)
+    follow_service.unfollow_user(db, current, user_id)
     return None
 
 
 @router.get(
     "/{username}/followers",
-    response_model=FollowList,
+    response_model=follow_schemas.UserPage,
     summary="List a user's followers",
-    description=(
-        "Public, paginated list of active users following ``username``. "
-        "Deactivated accounts are hidden. limit max is 50."
-    ),
-    responses={
-        404: {"description": "User not found or deactivated"},
-        422: {"description": "Invalid pagination"},
-    },
 )
-def list_followers(
+def followers(
     username: str,
-    page: dict = Depends(pagination),
-    db: Session = Depends(get_db),
-) -> FollowList:
-    items, total = follow_service.list_followers(db, username, page["limit"], page["offset"])
-    return FollowList(items=items, total=total, **page)
+    page: dict = Depends(pagination),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+    current: models.User | None = Depends(get_current_user_optional),  # noqa: B008
+) -> follow_schemas.UserPage:
+    return follow_service.list_followers(
+        db,
+        username,
+        limit=page["limit"],
+        offset=page["offset"],
+        current=current,
+    )
 
 
 @router.get(
     "/{username}/following",
-    response_model=FollowList,
-    summary="List users a user is following",
-    description=(
-        "Public, paginated list of active users followed by ``username``. "
-        "Deactivated accounts are hidden. limit max is 50."
-    ),
-    responses={
-        404: {"description": "User not found or deactivated"},
-        422: {"description": "Invalid pagination"},
-    },
+    response_model=follow_schemas.UserPage,
+    summary="List the users a user follows",
 )
-def list_following(
+def following(
     username: str,
-    page: dict = Depends(pagination),
-    db: Session = Depends(get_db),
-) -> FollowList:
-    items, total = follow_service.list_following(db, username, page["limit"], page["offset"])
-    return FollowList(items=items, total=total, **page)
+    page: dict = Depends(pagination),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+    current: models.User | None = Depends(get_current_user_optional),  # noqa: B008
+) -> follow_schemas.UserPage:
+    return follow_service.list_following(
+        db,
+        username,
+        limit=page["limit"],
+        offset=page["offset"],
+        current=current,
+    )

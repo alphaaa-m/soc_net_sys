@@ -1,16 +1,7 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 ﻿# team-A
 
 This branch is assigned to Team A.
-=======
-﻿# labiqa
 
-This branch is assigned to Student labiqa.
->>>>>>> labiqa
-=======
-﻿# master
-
-This branch is assigned to Project master branch.
->>>>>>> master
-
+Phase 1: authentication and user profiles.
+Phase 2: follow system.
+Phase 3: likes and reposts (in progress).

@@ -1,11 +1,12 @@
 """User/profile HTTP layer (PRD B2). Routers stay thin — rules live in user_service."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
 from app.deps import get_current_user, get_current_user_optional
+from app.pagination import pagination
 from app.schemas import user as user_schemas
 from app.services import user_service
 
@@ -34,6 +35,27 @@ def update_me(
     current: models.User = Depends(get_current_user),  # noqa: B008
 ) -> models.User:
     return user_service.update_profile(db, current, payload.model_dump(exclude_unset=True))
+
+
+@router.get(
+    "",
+    response_model=user_schemas.UserPage,
+    summary="Search active users by username or display name",
+)
+def search_users(
+    q: str = Query(..., min_length=2, max_length=50),  # noqa: B008
+    page: dict = Depends(pagination),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+    current: models.User | None = Depends(get_current_user_optional),  # noqa: B008
+) -> user_schemas.UserPage:
+    """Directory search used by the frontend to find people to follow."""
+    return user_service.search_users(
+        db,
+        q,
+        limit=page["limit"],
+        offset=page["offset"],
+        current=current,
+    )
 
 
 @router.get(

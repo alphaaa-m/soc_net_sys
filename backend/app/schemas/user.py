@@ -31,6 +31,29 @@ class UserProfile(UserPublic):
     is_following: bool = False
 
 
+class UserSummary(BaseModel):
+    """A compact user row used by follower lists and people search.
+
+    Counts are intentionally omitted: they belong on the full profile, and
+    leaving them out keeps directory queries free of per-row count queries.
+    """
+
+    id: int
+    username: str
+    display_name: str
+    bio: str | None = None
+    is_following: bool = False
+
+
+class UserPage(BaseModel):
+    """Paginated user list (PRD response standard)."""
+
+    items: list[UserSummary]
+    limit: int
+    offset: int
+    total: int
+
+
 class UserMe(BaseModel):
     """The authenticated user's own account (includes private fields)."""
 
