@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, get_current_user_optional
 from app.pagination import pagination
 from app.schemas import post as post_schemas
 from app.services import post_service
@@ -36,8 +36,9 @@ def create_post(
 def read_post(
     post_id: int,
     db: Session = Depends(get_db),  # noqa: B008
+    current: models.User | None = Depends(get_current_user_optional),  # noqa: B008
 ) -> post_schemas.PostRead:
-    return post_service.get_post(db, post_id)
+    return post_service.get_post(db, post_id, current)
 
 
 @router.patch(
@@ -77,10 +78,12 @@ def list_user_posts(
     username: str,
     page: dict = Depends(pagination),  # noqa: B008
     db: Session = Depends(get_db),  # noqa: B008
+    current: models.User | None = Depends(get_current_user_optional),  # noqa: B008
 ) -> post_schemas.PostPage:
     return post_service.list_user_posts(
         db,
         username,
         limit=page["limit"],
         offset=page["offset"],
+        current=current,
     )

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from app import models
 from app.exceptions import forbidden, not_found
 from app.schemas import post as post_schemas
-from app.services import user_service
+from app.services import like_service, repost_service, user_service
 
 
 def count_user_posts(db: Session, user_id: int) -> int:
@@ -40,20 +40,55 @@ def _post_or_404(db: Session, post_id: int) -> models.Post:
     return post
 
 
-def _to_read(post: models.Post) -> post_schemas.PostRead:
+def _to_read(
+    post: models.Post,
+    *,
+    like_count: int = 0,
+    share_count: int = 0,
+    liked_by_me: bool = False,
+) -> post_schemas.PostRead:
     """Map a model to the public post shape.
 
-    Counts and per-viewer flags stay at their schema defaults until the Phase 3
-    wiring PRs plug in the bulk queries (stub-and-wire).
+    ``comment_count`` remains stubbed until Phase 3 Team B's wiring PR; the
+    like/share counts and ``liked_by_me`` are filled by ``_read_many`` below.
     """
     return post_schemas.PostRead(
         id=post.id,
         content=post.content,
         author=post_schemas.PostAuthor.model_validate(post.author),
+        like_count=like_count,
+        share_count=share_count,
+        liked_by_me=liked_by_me,
         is_edited=post.updated_at is not None,
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
+
+
+def _read_many(
+    db: Session,
+    posts: list[models.Post],
+    current: models.User | None,
+) -> list[post_schemas.PostRead]:
+    """Serialise a page of posts with one grouped query per interaction type.
+
+    Keeping the counts in bulk helpers avoids N+1 queries (PM Plan Phase 3
+    review checklist).
+    """
+    ids = [post.id for post in posts]
+    like_counts = like_service.get_like_counts(db, ids)
+    share_counts = repost_service.get_repost_counts(db, ids)
+    liked = like_service.liked_post_ids(db, current.id, ids) if current else set()
+
+    return [
+        _to_read(
+            post,
+            like_count=like_counts.get(post.id, 0),
+            share_count=share_counts.get(post.id, 0),
+            liked_by_me=post.id in liked,
+        )
+        for post in posts
+    ]
 
 
 def create_post(db: Session, author: models.User, content: str) -> post_schemas.PostRead:
@@ -64,8 +99,13 @@ def create_post(db: Session, author: models.User, content: str) -> post_schemas.
     return _to_read(post)
 
 
-def get_post(db: Session, post_id: int) -> post_schemas.PostRead:
-    return _to_read(_post_or_404(db, post_id))
+def get_post(
+    db: Session,
+    post_id: int,
+    current: models.User | None = None,
+) -> post_schemas.PostRead:
+    post = _post_or_404(db, post_id)
+    return _read_many(db, [post], current)[0]
 
 
 def list_user_posts(
@@ -74,6 +114,7 @@ def list_user_posts(
     *,
     limit: int,
     offset: int,
+    current: models.User | None = None,
 ) -> post_schemas.PostPage:
     """Personal posts, newest first (``created_at DESC, id DESC`` for stability)."""
     author = user_service.get_active_user_by_username(db, username)
@@ -93,7 +134,7 @@ def list_user_posts(
         .all()
     )
     return post_schemas.PostPage(
-        items=[_to_read(post) for post in posts],
+        items=_read_many(db, posts, current),
         limit=limit,
         offset=offset,
         total=total,
@@ -117,7 +158,7 @@ def update_post(
     post.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(post)
-    return _to_read(post)
+    return _read_many(db, [post], current)[0]
 
 
 def delete_post(db: Session, post_id: int, current: models.User) -> None:
